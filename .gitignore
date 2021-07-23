@@ -2,6 +2,6 @@
 _version.py
 build
 dist
-scripts/*out*
+examples/*out*
 *.egg-info
 *__pycache__*
