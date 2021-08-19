@@ -92,9 +92,9 @@ KWARGS = {
     'package_data' : {},
     'entry_points' : {
         'vaby.models' : [
-            'aslnn=vaby_models_asl:AslNNModel',
+#            'aslnn=vaby_models_asl:AslNNModel',
             'aslrest=vaby_models_asl:AslRestModel',
-            'aslrest_disp=vaby_models_asl:AslRestDisp',
+#            'aslrest_disp=vaby_models_asl:AslRestDisp',
         ],
     },
     'classifiers' : [
