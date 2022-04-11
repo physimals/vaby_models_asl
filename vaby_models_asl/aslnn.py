@@ -188,19 +188,19 @@ class AslNNModel(Model):
 
         # Generate training data using ftiss=1 (since this is just
         # a scaling factor and is imposed independently of the NN)
-        sig = np.zeros((1, len(self.tis)), dtype=np.float32)
+        sig = np.zeros((1, len(self.tis)), dtype=NP_DTYPE)
         data_model = VolumetricModel(sig)
         model = AslRestModel(data_model, tis=self.tis, **options)
         tpts = np.random.uniform(1.0, 5.0, size=(n,))
         delttiss = np.random.uniform(0.1, self.train_delttiss_max, size=(n,))
-        params = np.zeros((2, n, 1), dtype=np.float32)
+        params = np.zeros((2, n, 1), dtype=NP_DTYPE)
         params[0, :, 0] = 1.0
         params[1, :, 0] = delttiss
         modelsig = model.ievaluate(params, tpts[..., np.newaxis])
         self.log.info(" - Generated %i instances of training data" % n)
 
         # Split training data into training and test data sets
-        x = np.zeros((n, 2), dtype=np.float32)
+        x = np.zeros((n, 2), dtype=NP_DTYPE)
         x[:, 0] = tpts
         x[:, 1] = delttiss
         y = np.squeeze(modelsig, axis=-1)
@@ -268,8 +268,8 @@ class AslNNModel(Model):
         """
         graph = tf.Graph()
         with graph.as_default():
-            x_input = tf.placeholder(tf.float32, [None, 2])
-            y_input = tf.placeholder(tf.float32, [None, 1])
+            x_input = tf.placeholder(TF_DTYPE, [None, 2])
+            y_input = tf.placeholder(TF_DTYPE, [None, 1])
             layers = self._create_nn(x_input, trainable=True)
             prediction = layers[-1]
             loss = tf.reduce_mean(tf.reduce_sum(tf.square(y_input - prediction), reduction_indices=[1]))

@@ -5,7 +5,7 @@ import tensorflow as tf
 import numpy as np
 
 from vaby.model import Model, ModelOption
-from vaby.utils import ValueList, NP_DTYPE
+from vaby.utils import ValueList, NP_DTYPE, TF_DTYPE
 from vaby.parameter import get_parameter
 
 from . import __version__
@@ -17,47 +17,49 @@ class AslRestModel(Model):
     FIXME integrate with oxasl AslImage class?
     """
 
-    OPTIONS = [
-        # ASL parameters 
-        ModelOption("tau", "Bolus duration", units="s", clargs=("--tau", "--bolus"), type=float, default=1.8),
-        ModelOption("casl", "Data is CASL/pCASL", type=bool, default=False),
-        ModelOption("tis", "Inversion times", units="s", type=ValueList(float)),
-        ModelOption("plds", "Post-labelling delays (for CASL instead of TIs)", units="s", type=ValueList(float)),
-        ModelOption("repeats", "Number of repeats - single value or one per TI/PLD", units="s", type=ValueList(int), default=[1]),
-        ModelOption("slicedt", "Increase in TI/PLD per slice", units="s", type=float, default=0),
+    def options(self):
+        return [
+            # ASL parameters 
+            ModelOption("tau", "Bolus duration", units="s", clargs=("--tau", "--bolus"), type=float, default=1.8),
+            ModelOption("casl", "Data is CASL/pCASL", type=bool, default=False),
+            ModelOption("tis", "Inversion times", units="s", type=ValueList(float)),
+            ModelOption("plds", "Post-labelling delays (for CASL instead of TIs)", units="s", type=ValueList(float)),
+            ModelOption("repeats", "Number of repeats - single value or one per TI/PLD", units="s", type=ValueList(int), default=[1]),
+            ModelOption("slicedt", "Increase in TI/PLD per slice", units="s", type=float, default=0),
 
-        # GM tissue properties 
-        ModelOption("t1", "Tissue T1 value", units="s", type=float, default=1.3),
-        ModelOption("att", "Bolus arrival time", units="s", clargs=("--bat",), type=float, default=1.3),
-        ModelOption("attsd", "Bolus arrival time prior std.dev.", units="s", clargs=("--batsd",), type=float, default=None),
-        ModelOption("fcalib", "Perfusion value to use in estimation of effective T1", type=float, default=0.01),
-        ModelOption("pc", "Blood/tissue partition coefficient. If only inferring on one tissue, default is 0.9; if inferring on both GM/WM default is 0.98/0.8 respectively. See --pcwm", type=float, default=None),
+            # GM tissue properties 
+            ModelOption("t1", "Tissue T1 value", units="s", type=float, default=1.3),
+            ModelOption("att", "Bolus arrival time", units="s", clargs=("--bat",), type=float, default=1.3),
+            ModelOption("attsd", "Bolus arrival time prior std.dev.", units="s", clargs=("--batsd",), type=float, default=None),
+            ModelOption("fcalib", "Perfusion value to use in estimation of effective T1", type=float, default=0.01),
+            ModelOption("pc", "Blood/tissue partition coefficient. If only inferring on one tissue, default is 0.9; if inferring on both GM/WM default is 0.98/0.8 respectively. See --pcwm", type=float, default=None),
 
-        # WM tissue properties 
-        ModelOption("incwm", "Include WM component at each node", default=False),
-        ModelOption("inferwm", "Infer WM parameters at each node", default=False),
-        ModelOption("pvcorr", "Partial volume correction - equivalent to incwm and inferwm", default=False),
-        ModelOption("t1wm", "WM T1 value", units="s", type=float, default=1.1),
-        ModelOption("fwm", "WM perfusion value to use if incwm=True and inferwm=False", type=float, default=0),
-        ModelOption("attwm", "WM arterial transit time. Used as prior and initial posterior if inferwm=True, used as fixed value if inferwm=False", clargs=("--batwm",), type=float, default=1.6),
-        ModelOption("fcalibwm", "WM perfusion value to use in estimation of effective T1", type=float, default=0.003),
-        ModelOption("pcwm", "WM parition coefficient. See --pc", type=float, default=0.8),
+            # WM tissue properties 
+            ModelOption("incwm", "Include WM component at each node", default=False),
+            ModelOption("inferwm", "Infer WM parameters at each node", default=False),
+            ModelOption("pvcorr", "Partial volume correction - equivalent to incwm and inferwm", default=False),
+            ModelOption("t1wm", "WM T1 value", units="s", type=float, default=1.1),
+            ModelOption("fwm", "WM perfusion value to use if incwm=True and inferwm=False", type=float, default=0),
+            ModelOption("attwm", "WM arterial transit time. Used as prior and initial posterior if inferwm=True, used as fixed value if inferwm=False", clargs=("--batwm",), type=float, default=1.6),
+            ModelOption("fcalibwm", "WM perfusion value to use in estimation of effective T1", type=float, default=0.003),
+            ModelOption("pcwm", "WM parition coefficient. See --pc", type=float, default=0.8),
 
-        # Blood / arterial properties 
-        ModelOption("t1b", "Blood T1 value", units="s", type=float, default=1.65),
-        ModelOption("artt", "Arterial bolus arrival time", units="s", clargs=("--batart",), type=float, default=None),
-        ModelOption("arttsd", "Arterial bolus arrival time prior std.dev.", units="s", clargs=("--batartsd",), type=float, default=None),
+            # Blood / arterial properties 
+            ModelOption("t1b", "Blood T1 value", units="s", type=float, default=1.65),
+            ModelOption("artt", "Arterial bolus arrival time", units="s", clargs=("--batart",), type=float, default=None),
+            ModelOption("arttsd", "Arterial bolus arrival time prior std.dev.", units="s", clargs=("--batartsd",), type=float, default=None),
 
-        # Inference options 
-        ModelOption("artonly", "Only infer arterial component not tissue", type=bool),
-        ModelOption("inferart", "Infer arterial component", type=bool),
-        ModelOption("infert1", "Infer T1 value", type=bool),
-        ModelOption("att_init", "Initialization method for ATT (max=max signal - bolus duration)", default=""),
+            # Inference options 
+            ModelOption("artonly", "Only infer arterial component not tissue", type=bool),
+            ModelOption("inferatt", "Infer transit time", type=bool, default=True),
+            ModelOption("inferart", "Infer arterial component", type=bool),
+            ModelOption("infert1", "Infer T1 value", type=bool),
+            ModelOption("att_init", "Initialization method for ATT (max=max signal - bolus duration)", default=""),
 
-        # PVE options 
-        ModelOption("pvgm", "GM partial volume", type=float, default=1.0),
-        ModelOption("pvwm", "WM partial volume", type=float, default=0.0),
-    ]
+            # PVE options 
+            ModelOption("pvgm", "GM partial volume", type=float, default=1.0),
+            ModelOption("pvwm", "WM partial volume", type=float, default=0.0),
+        ]
 
     def __init__(self, data_model, **options):
         Model.__init__(self, data_model, **options)
@@ -68,7 +70,7 @@ class AslRestModel(Model):
             raise ValueError("Either TIs or PLDs must be given")
 
         # Only infer ATT with multi-time data 
-        self.inferatt = (len(self.tis) > 1)
+        self.inferatt = self.inferatt and (len(self.tis) > 1)
 
         if self.attsd is None:
             self.attsd = 1.0 if len(self.tis) > 1 else 0.1
@@ -76,6 +78,12 @@ class AslRestModel(Model):
             self.artt = self.att - 0.3
         if self.arttsd is None:
             self.arttsd = self.attsd
+
+        # Handle WM structures
+        self.att_default = self.att * np.ones(self.data_model.model_space.size, dtype=NP_DTYPE)
+        for p, sl in zip(self.data_model.model_space.parts, self.data_model.model_space.slices):
+            if p.name.lower() == "wm":
+                self.att_default[sl] = self.attwm
 
         # Repeats are supposed to be a list but can be a single number
         if isinstance(self.repeats, int):
@@ -143,6 +151,7 @@ class AslRestModel(Model):
                 get_parameter("ftiss", dist="Normal", 
                             mean=1.5, prior_var=1e6, post_var=1.5, 
                             post_init=self._init_flow,
+                            pv_scale=True,
                             **options)
             ]
             if self.inferatt: 
@@ -158,6 +167,7 @@ class AslRestModel(Model):
                     get_parameter("fwm", dist="Normal", 
                             mean=0.5, prior_var=1e6, post_var=1.5, 
                             post_init=self._init_flow,
+                            pv_scale=True,
                             **options)
                 )
                 if self.inferatt:
@@ -182,10 +192,11 @@ class AslRestModel(Model):
             self.leadscale = 0.01
             self.params.append(
                 get_parameter("fblood", dist="Normal",
-                              mean=0.0, prior_var=1e6, post_var=1.5,
-                              post_init=self._init_fblood,
-                              prior_type="A",
-                              **options)
+                            mean=0.0, prior_var=1e6, post_var=1.5,
+                            post_init=self._init_fblood,
+                            prior_type="A",
+                            pv_scale=True,
+                            **options)
             )
             if self.inferatt:
                 self.params.append(
@@ -196,22 +207,24 @@ class AslRestModel(Model):
                 )
 
     def tpts(self):
-        if self.data_model.n_tpts != len(self.tis) * self.repeats:
-            raise ValueError("ASL model configured with %i time points, but data has %i" % (len(self.tis)*self.repeats, self.data_model.n_tpts))
+        #if self.data_model.data_space.srcdata.n_tpts != len(self.tis) * self.repeats:
+        #    raise ValueError("ASL model configured with %i time points, but data has %i" % (len(self.tis)*self.repeats, self.data_model.n_tpts))
+        n_tpts = len(self.tis) * self.repeats
 
         # FIXME assuming grouped by TIs/PLDs
         # Generate timings volume using the slicedt value
-        t = np.zeros(list(self.data_model.shape) + [self.data_model.n_tpts], dtype=np.float32)
-        for z in range(self.data_model.shape[2]):
+        acq_shape = self.data_model.data_space.shape
+        t = np.zeros(list(acq_shape) + [n_tpts], dtype=NP_DTYPE)
+        for z in range(acq_shape[2]):
             t[:, :, z, :] = np.array(sum([[ti + z*self.slicedt] * self.repeats for ti in self.tis], []))
 
         # Apply mask
-        t = t[self.data_model.mask_vol > 0]
+        t = t[self.data_model.data_space.mask > 0]
 
         # Time points derived from data space need to be transformed into node space.
-        t = t.reshape(-1, 1, self.data_model.n_tpts)
-        t = self.data_model.voxels_to_nodes_ts(t, pv_sum=False)
-        return t.reshape(-1, self.data_model.n_tpts)
+        t = t.reshape(-1, 1, n_tpts)
+        t = self.data_model.data_to_model(tf.constant(t), pv_scale=False).numpy()
+        return t.reshape(-1, n_tpts)
 
     def __str__(self):
         return "ASL resting state model: %s" % __version__
@@ -241,20 +254,26 @@ class AslRestModel(Model):
         param_idx = 0
         if not self.artonly:
             ftiss = params[param_idx]
+            ftiss = tf.clip_by_value(ftiss, clip_value_min=0, clip_value_max=1e10)
             param_idx += 1
 
             if self.inferatt:
                 delt = params[param_idx]
+                delt = tf.clip_by_value(delt, clip_value_min=0, clip_value_max=max(self.tis)-0.2)
                 param_idx += 1
-            else: 
-                delt = self.att 
+            else:
+                delt = self.att_default
+                for dim in range(tf.rank(ftiss)-1):
+                    delt = delt[..., np.newaxis]
         
             if self.inferwm:
                 fwm = params[param_idx]
+                fwm = tf.clip_by_value(fwm, clip_value_min=0, clip_value_max=1e10)
                 param_idx += 1
                 
                 if self.inferatt:
                     deltwm = params[param_idx]
+                    deltwm = tf.clip_by_value(deltwm, clip_value_min=0, clip_value_max=max(self.tis)-0.2)
                     param_idx += 1   
                 else: 
                     deltwm = self.attwm 
@@ -276,13 +295,15 @@ class AslRestModel(Model):
 
         if self.inferart:
             fblood = params[param_idx]
+            fblood = tf.clip_by_value(fblood, clip_value_min=0, clip_value_max=1e10)
             deltblood = params[param_idx+1]
+            deltblood = tf.clip_by_value(deltblood, clip_value_min=0, clip_value_max=max(self.tis)-0.2)
             param_idx += 2
 
         # Extra parameters may be required by subclasses, e.g. dispersion parameters
         extra_params = params[param_idx:]
 
-        if not self.artonly:
+        if not self.artonly:        
             signal = self.tissue_signal(t, ftiss, delt, t1, self.pc, self.fcalib, self.pvgm, extra_params)
 
             if self.incwm: 
@@ -290,7 +311,7 @@ class AslRestModel(Model):
                 signal += wmsignal
 
         else:
-            signal = tf.zeros(tf.shape(t), dtype=tf.float32)
+            signal = tf.zeros(tf.shape(t), dtype=TF_DTYPE)
 
         if self.inferart:
             # FIMXE: is this going to work in surface/hybrid mode?
@@ -302,8 +323,9 @@ class AslRestModel(Model):
         """
         PASL/pCASL kinetic model for tissue
         """
-        if (extra_params != []) and (extra_params.shape[0] > 0): 
-            raise NotImplementedError("Extra tissue parameters not set up yet")
+        #if (extra_params != []) and (extra_params.shape[0] > 0):
+        #    print(extra_params)
+        #    raise NotImplementedError("Extra tissue parameters not set up yet")
 
         # Boolean masks indicating which voxel-timepoints are during the
         # bolus arrival and which are after
@@ -374,14 +396,13 @@ class AslRestModel(Model):
 
         return fblood*signal
 
-    def _init_flow(self, _param, _t, data):
+    def _init_flow(self, _param, data):
         """
         Initial value for the flow parameter
         """
         # return f, None 
         if not self.pvcorr:
-            f = tf.math.maximum(data.mean(-1).astype(NP_DTYPE), 0.1)
-            return f, None
+            ftiss_init = tf.math.maximum(data.mean(-1).astype(NP_DTYPE), 0.1)
         else:
             # Do a quick edge correction to up-scale signal in edge voxels 
             # Guard against small number division 
@@ -392,41 +413,43 @@ class AslRestModel(Model):
             # let g = GM PV, w = WM PV = (1 - g), f = raw CBF, 
             # x = WM CBF. Then, wx + 3gx = f => x = 3f / (1 + 2g)
             f = tf.math.maximum(data.mean(-1).astype(NP_DTYPE), 0.1)
-            fwm = f / (1 + 2*self.pvgm)
-            if _param.name == 'fwm':
-                return fwm, None
-            else: 
-                return 3 * fwm, None 
+            ftiss_init = f / (1 + 2*self.pvgm)
+            if _param.name != 'fwm':
+                ftiss_init *= 3
 
-    def _init_fblood(self, _param, _t, data):
+        return self.data_model.data_to_model(ftiss_init), None
+
+    def _init_fblood(self, _param, data):
         """
         Initial value for the fblood parameter
         """
-        return tf.math.maximum(tf.reduce_max(data, axis=1), 0.1), None
+        fblood_init = tf.math.maximum(tf.reduce_max(data, axis=1), 0.1)
+        return self.data_model.data_to_model(fblood_init), None
 
-    def _init_delt(self, _param, t, data):
+    def _init_delt(self, _param, data):
         """
         Initial value for the delttiss parameter
         """
+        t = self.tpts()
+        nnodes = tf.shape(data)[0]
         if self.att_init == "max":
             max_idx = tf.math.argmax(data, axis=1)
             time_max = tf.squeeze(tf.gather(t, max_idx, axis=1, batch_dims=1), axis=-1)
-
-            if _param.name == 'fwm': 
-                return (time_max + 0.3 - self.tau, 
-                        self.attsd * np.ones_like(time_max))
+            if _param.name == 'deltwm': 
+                att_init = time_max + 0.3 - self.tau
             else: 
-                return (time_max - self.tau, 
-                        self.attsd * np.ones_like(time_max))
+                att_init = time_max - self.tau
+            return self.data_model.data_to_model(att_init), None
+
         # elif self.data_model.is_volumetric:
         #     if _param.name == 'fwm': 
         #         return self.attwm, self.attsd
         #     else: 
         #         return self.att, self.attsd
         # elif self.data_model.is_hybrid: 
-        #     att_init = np.ones(self.data_model.n_nodes, dtype=np.float32)
+        #     att_init = np.ones(self.data_model.n_nodes, dtype=NP_DTYPE)
         #     att_init[self.data_model.surf_slicer] = self.att 
         #     att_init[self.data_model.vol_slicer] = self.attwm
         #     return att_init, self.attsd
         else: 
-            return tf.fill((self.data_model.n_nodes,), self.att), None
+            return self.att_default, None

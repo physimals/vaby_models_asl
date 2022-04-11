@@ -54,7 +54,7 @@ class AslRestDisp(AslRestModel):
         delt = self.log_tf(delt, name="delt", shape=True, force=False)
 
         # Kinetic curve is numerical convolution of AIF and residue on discrete timepoints
-        conv_t = tf.constant(self.conv_t, dtype=tf.float32)
+        conv_t = tf.constant(self.conv_t, dtype=TF_DTYPE)
         aif = self.log_tf(self.aif_gammadisp(conv_t, delt, extra_params), force=False, shape=True, name="aif") # [W, S, NT]
         resid = self.log_tf(self.resid_wellmix(conv_t, t1), force=False, shape=True, name="resid") # [NT]
         kinetic_curve = self.log_tf(self.conv_tf(aif, resid, self.conv_dt), force=False, shape=True, name="conv") # [W, S, NT]
@@ -103,7 +103,7 @@ class AslRestDisp(AslRestModel):
         k = 1 + sp
         gamma1 = self.log_tf(tf.math.igammac(k, s * tf.clip_by_value(t - delt, 0, 1e6)), name="gamma1", force=False, shape=True)
         gamma2 = self.log_tf(tf.math.igammac(k, s * tf.clip_by_value(t - delt - self.tau, 0, 1e6)), name="gamma2", force=False)
-        kcblood = tf.zeros(tf.shape(during_bolus), dtype=tf.float32)
+        kcblood = tf.zeros(tf.shape(during_bolus), dtype=TF_DTYPE)
         kcblood = tf.where(during_bolus, kcblood_nondisp * (1 - gamma1), kcblood)
         kcblood = tf.where(post_bolus, kcblood_nondisp * (gamma2 - gamma2), kcblood)
 
@@ -125,7 +125,7 @@ class AslRestDisp(AslRestModel):
         else:
             kcblood_nondisp = 2 * tf.exp(-t / self.t1b)
         
-        kcblood = tf.zeros(tf.shape(during_bolus), dtype=tf.float32)
+        kcblood = tf.zeros(tf.shape(during_bolus), dtype=TF_DTYPE)
         kcblood = tf.where(during_bolus, kcblood_nondisp, kcblood)
 
         return kcblood
