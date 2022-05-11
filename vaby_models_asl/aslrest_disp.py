@@ -1,19 +1,16 @@
 """
 Inference forward models for ASL data with dispersion
 """
-try:
-    import tensorflow.compat.v1 as tf
-except ImportError:
-    import tensorflow as tf
-
+import tensorflow as tf
 import tensorflow_probability as tfp
 import numpy as np
 
-from svb.model import Model, ModelOption
-from svb.parameter import get_parameter
+from vaby.model import Model, ModelOption
+from vaby.utils import ValueList, NP_DTYPE, TF_DTYPE
+from vaby.parameter import get_parameter
 
-from svb_models_asl import __version__
-from svb_models_asl.aslrest import AslRestModel
+from . import __version__
+from .aslrest import AslRestModel
 
 class AslRestDisp(AslRestModel):
     """
@@ -21,11 +18,12 @@ class AslRestDisp(AslRestModel):
     and residue function, to enable incorporation of dispersion
     """
     
-    OPTIONS = AslRestModel.OPTIONS + [
-        ModelOption("conv_dt", "Time interval for numerical convolution", units="s", type=float, default=0.1),
-        ModelOption("conv_type", "Convolution type ('gamma' only supprted type presently)", type=str, default="gamma"),
-        ModelOption("infer_disp_params", "Whether to infer parameters of the dispersion", type=bool, default=True),
-    ]
+    def options(self):
+        return AslRestModel.options(self) + [
+            ModelOption("conv_dt", "Time interval for numerical convolution", units="s", type=float, default=0.1),
+            ModelOption("conv_type", "Convolution type ('gamma' only supprted type presently)", type=str, default="gamma"),
+            ModelOption("infer_disp_params", "Whether to infer parameters of the dispersion", type=bool, default=True),
+        ]
 
     def __init__(self, data_model, **options):
         AslRestModel.__init__(self, data_model, **options)
@@ -45,23 +43,21 @@ class AslRestDisp(AslRestModel):
     def __str__(self):
         return "ASL resting state model with gamma dispersion: %s" % __version__
 
-    def tissue_signal(self, t, ftiss, delt, t1, extra_params):
+    def tissue_signal(self, t, ftiss, delt, t1, pc, fcalib, pv=1.0, extra_params=[]):
         """
         ASL kinetic model for tissue with dispersion implemented by 
         convolution of AIF and residue function
         """
-        ftiss = self.log_tf(ftiss, name="ftiss", shape=True, force=False)
-        delt = self.log_tf(delt, name="delt", shape=True, force=False)
-
         # Kinetic curve is numerical convolution of AIF and residue on discrete timepoints
         conv_t = tf.constant(self.conv_t, dtype=TF_DTYPE)
-        aif = self.log_tf(self.aif_gammadisp(conv_t, delt, extra_params), force=False, shape=True, name="aif") # [W, S, NT]
-        resid = self.log_tf(self.resid_wellmix(conv_t, t1), force=False, shape=True, name="resid") # [NT]
-        kinetic_curve = self.log_tf(self.conv_tf(aif, resid, self.conv_dt), force=False, shape=True, name="conv") # [W, S, NT]
+        aif = self.aif_gammadisp(conv_t, delt, extra_params) # [W, S, NT]
+        resid = self.resid_wellmix(conv_t, t1, pc, fcalib) # [NT]
+        kinetic_curve = self.conv_tf(aif, resid, self.conv_dt) # [W, S, NT]
 
         # Sample the kinetic curve at the TIs (using linear interpolation here)
-        signal =  self.log_tf(tfp.math.batch_interp_regular_1d_grid(t, 0, self.conv_tmax, kinetic_curve, axis=-1), force=False, shape=True, name="sig") # [W, S, B]
-        return ftiss*signal
+        signal =  tfp.math.batch_interp_regular_1d_grid(t, 0, self.conv_tmax, kinetic_curve, axis=-1) # [W, S, B]
+
+        return pv * ftiss * signal
 
     def art_signal(self, t, fblood, deltblood, extra_params):
         return fblood * self.aif_gammadisp(t, deltblood, extra_params)
@@ -88,26 +84,26 @@ class AslRestDisp(AslRestModel):
             s = 7.4
             sp = 0.74
     
-        pre_bolus = self.log_tf(tf.less(t, delt, name="aif_pre_bolus"), shape=True)
-        post_bolus = self.log_tf(tf.greater(t, tf.add(delt, self.tau), name="aif_pre_bolus"), shape=True)
+        pre_bolus = tf.less(t, delt, name="aif_pre_bolus")
+        post_bolus = tf.greater(t, tf.add(delt, self.tau), name="aif_pre_bolus")
         during_bolus = tf.logical_and(tf.logical_not(pre_bolus), tf.logical_not(post_bolus))
 
         # Calculate AIF
         if self.casl:
-            kcblood_nondisp = self.log_tf(2 * tf.exp(-delt / self.t1b), name="kcblood_nodisp", force=False, shape=True)
+            kcblood_nondisp = 2 * tf.exp(-delt / self.t1b)
         else:
             kcblood_nondisp = 2 * tf.exp(-t / self.t1b)
 
         # This part applies the Gamma function dispersion. Note the need to clip the time argument to >=0 otherwise
         # we get NaN in the gradient which does not disappear even though it does not affect the output
         k = 1 + sp
-        gamma1 = self.log_tf(tf.math.igammac(k, s * tf.clip_by_value(t - delt, 0, 1e6)), name="gamma1", force=False, shape=True)
-        gamma2 = self.log_tf(tf.math.igammac(k, s * tf.clip_by_value(t - delt - self.tau, 0, 1e6)), name="gamma2", force=False)
+        gamma1 = tf.math.igammac(k, s * tf.clip_by_value(t - delt, 0, 1e6))
+        gamma2 = tf.math.igammac(k, s * tf.clip_by_value(t - delt - self.tau, 0, 1e6))
         kcblood = tf.zeros(tf.shape(during_bolus), dtype=TF_DTYPE)
         kcblood = tf.where(during_bolus, kcblood_nondisp * (1 - gamma1), kcblood)
         kcblood = tf.where(post_bolus, kcblood_nondisp * (gamma2 - gamma2), kcblood)
 
-        return self.log_tf(kcblood, force=False, shape=True, name="kcblood")
+        return kcblood
 
     def aif_nodisp(self, t, delt, extra_params):
         """
@@ -116,8 +112,8 @@ class AslRestDisp(AslRestModel):
         See aif_gammadisp for parameters. This should give the same output as the aslrest model
         (not identical because of numerical convolution), and exists only for testing purposes
         """
-        pre_bolus = self.log_tf(tf.less(t, delt, name="aif_pre_bolus"), shape=True)
-        post_bolus = self.log_tf(tf.greater(t, tf.add(delt, self.tau), name="aif_post_bolus"), shape=True)
+        pre_bolus = tf.less(t, delt, name="aif_pre_bolus")
+        post_bolus = tf.greater(t, tf.add(delt, self.tau), name="aif_post_bolus")
         during_bolus = tf.logical_and(tf.logical_not(pre_bolus), tf.logical_not(post_bolus))
 
         if self.casl:
@@ -130,7 +126,7 @@ class AslRestDisp(AslRestModel):
 
         return kcblood
 
-    def resid_wellmix(self, t, t1):
+    def resid_wellmix(self, t, t1, pc, fcalib):
         """
         Residue function for well mixed single compartment
 
@@ -142,7 +138,7 @@ class AslRestDisp(AslRestModel):
         :return: residue function [NT] or [W, S, NT]
         """
         # FIXME does variable t1 work here?
-        t1_app = 1 / (1 / t1 + self.fcalib / self.pc)
+        t1_app = 1 / (1 / t1 + fcalib / pc)
         return(tf.math.exp(-t / t1_app))
 
     def conv_tf(self, data, kernel, dt):
