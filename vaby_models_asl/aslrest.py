@@ -90,12 +90,9 @@ class AslRestModel(Model):
             self.repeats = [self.repeats]
 
         # For now we only support fixed repeats
-        if len(self.repeats) == 1:
-            # FIXME variable repeats
-            self.repeats = self.repeats[0]
-        elif len(self.repeats) > 1 and \
-            any([ r != self.repeats[0] for r in self.repeats ]):
+        if len(self.repeats) > 1 and any([ r != self.repeats[0] for r in self.repeats ]):
             raise NotImplementedError("Variable repeats for TIs/PLDs")
+        self.repeats = self.repeats[0]
 
         # If we are modelling separate WM/GM components, load the partial volume maps
         if self.pvcorr: 
